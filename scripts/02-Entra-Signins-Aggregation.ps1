@@ -7,22 +7,31 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# Minimal dependency: Microsoft.Graph (SDK). Read-only scopes.
-if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
-  Write-Host "Installing Microsoft.Graph module for current user..." -ForegroundColor Yellow
-  Install-Module Microsoft.Graph -Scope CurrentUser -Force -AllowClobber
+# Minimal dependencies: Authentication + Reports only
+if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
+  Write-Host "Installing Microsoft.Graph.Authentication..." -ForegroundColor Yellow
+  Install-PackageProvider NuGet -Force | Out-Null
+  Install-Module Microsoft.Graph.Authentication -Scope CurrentUser -Force -AllowClobber
 }
-Import-Module Microsoft.Graph -ErrorAction Stop
+if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Reports)) {
+  Write-Host "Installing Microsoft.Graph.Reports..." -ForegroundColor Yellow
+  Install-Module Microsoft.Graph.Reports -Scope CurrentUser -Force -AllowClobber
+}
 
-$scopes = @("AuditLog.Read.All","Directory.Read.All")
+Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+Import-Module Microsoft.Graph.Reports -ErrorAction Stop
+
+$scopes = @("AuditLog.Read.All")
 Write-Host "Connecting to Microsoft Graph (scopes: $($scopes -join ', '))..." -ForegroundColor Cyan
 Connect-MgGraph -Scopes $scopes | Out-Null
 
-$startIso = (Get-Date).AddDays(-$LookbackDays).ToString("o")
-Write-Host "Querying sign-ins since $startIso ..." -ForegroundColor Cyan
+# Build a UTC timestamp without fractions (Graph requires this)
+$startUtc = (Get-Date).AddDays(-$LookbackDays).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+Write-Host "Querying sign-ins since $startUtc (UTC) ..." -ForegroundColor Cyan
 
-# Pull all sign-ins in window (tenant-wide). For very large tenants, you can segment later.
-$signins = Get-MgAuditLogSignIn -Filter "createdDateTime ge $startIso" -All
+# Pull all sign-ins in window (tenant-wide)
+$signins = Get-MgAuditLogSignIn -Filter "createdDateTime ge $startUtc" -All
+
 
 if (-not $signins) {
   Write-Warning "No sign-in records returned for the lookback window."
